@@ -2,6 +2,7 @@ package ir.rwagh.app
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
@@ -9,6 +10,7 @@ import android.net.Network
 import android.net.Uri
 import android.os.Bundle
 import android.view.ViewGroup
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -17,8 +19,10 @@ import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresPermission
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -156,14 +160,36 @@ fun ErrorScreen() { // دکمه تلاش مجدد دیگر لازم نیست
 /**
  * کامپوننت اصلی که WebView و تمام منطق‌های مربوط به آن را مدیریت می‌کند.
  */
-@SuppressLint("SetJavaScriptEnabled", "ContextCastToActivity")
+@SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun WebViewScreen(url: String, modifier: Modifier = Modifier, onWebViewCreated: (WebView) -> Unit) {
+fun WebViewScreen(
+    url: String,
+    modifier: Modifier = Modifier,
+    onWebViewCreated: (WebView) -> Unit
+) {
     var isLoading by remember { mutableStateOf(true) }
     val connection by connectivityState()
     val isOnline = connection == ConnectionState.Available
     val context = LocalContext.current
-    var localWebView by remember { mutableStateOf<WebView?>(null) }  // تعریف محلی webView
+    var localWebView by remember { mutableStateOf<WebView?>(null) }
+
+    // ---- برای File Chooser ----
+    val activity = context as? ComponentActivity
+    var fileChooserCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val data = result.data
+        val uris = when {
+            result.resultCode != Activity.RESULT_OK -> null
+            data?.data != null -> arrayOf(data.data!!)
+            else -> null
+        }
+        fileChooserCallback?.onReceiveValue(uris)
+        fileChooserCallback = null
+    }
+
+    // ----------------------------
 
     Box(modifier = modifier.fillMaxSize()) {
         if (isOnline) {
@@ -171,22 +197,54 @@ fun WebViewScreen(url: String, modifier: Modifier = Modifier, onWebViewCreated: 
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
                     WebView(ctx).apply {
-                        layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
+                        settings.allowFileAccess = true
+                        settings.allowContentAccess = true
+                        settings.mediaPlaybackRequiresUserGesture = false
                         settings.cacheMode = WebSettings.LOAD_DEFAULT
                         webViewClient = MyWebViewClient(ctx)
+
                         webChromeClient = object : WebChromeClient() {
                             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                                 isLoading = newProgress < 100
                             }
+
+                            override fun onShowFileChooser(
+                                webView: WebView?,
+                                filePathCallback: ValueCallback<Array<Uri>>?,
+                                fileChooserParams: FileChooserParams?
+                            ): Boolean {
+                                fileChooserCallback?.onReceiveValue(null)
+                                fileChooserCallback = filePathCallback
+
+                                val intent: Intent = fileChooserParams?.createIntent()!!
+                                try {
+                                    filePickerLauncher.launch(intent)
+                                } catch (e: Exception) {
+                                    fileChooserCallback = null
+                                    Toast.makeText(
+                                        ctx,
+                                        "امکان باز کردن گالری وجود ندارد.",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    return false
+                                }
+                                return true
+                            }
                         }
+
                         loadUrl(url)
-                        onWebViewCreated(this)  // callback
-                        localWebView = this  // ست محلی
+                        onWebViewCreated(this)
+                        localWebView = this
                     }
                 }
             )
+
             if (isLoading) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             }
@@ -195,24 +253,19 @@ fun WebViewScreen(url: String, modifier: Modifier = Modifier, onWebViewCreated: 
         }
     }
 
-    // مدیریت دکمه بازگشت فیزیکی دستگاه
-    val activity = LocalContext.current as? ComponentActivity
+    // ---- دکمه بازگشت ----
     DisposableEffect(activity, localWebView) {
         val callback = object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (localWebView?.canGoBack() == true) {
-                    localWebView?.goBack() // اگر در تاریخچه وب‌سایت صفحه‌ای بود، به عقب برگرد
+                    localWebView?.goBack()
                 } else {
-                    // در غیر این صورت، رفتار پیش‌فرض (خروج از اپ) را اجرا کن
                     isEnabled = false
                     activity?.onBackPressedDispatcher?.onBackPressed()
                 }
             }
         }
         activity?.onBackPressedDispatcher?.addCallback(callback)
-        // پاکسازی callback هنگام بسته شدن کامپوننت
-        onDispose {
-            callback.remove()
-        }
+        onDispose { callback.remove() }
     }
 }
