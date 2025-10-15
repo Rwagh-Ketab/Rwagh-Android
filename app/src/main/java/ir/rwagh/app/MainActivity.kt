@@ -98,6 +98,17 @@ private class MyWebViewClient(
 ) : WebViewClient() {
     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
         val url = request?.url?.toString() ?: return false
+
+        if (url.startsWith("rwagh://")) {
+            try {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                Toast.makeText(context, "امکان باز کردن لینک اپ وجود ندارد.", Toast.LENGTH_SHORT).show()
+            }
+            return true
+        }
+
         val hostname = Uri.parse(url).host ?: ""
 
         if (hostname == "rwagh.ir" || hostname.endsWith(".rwagh.ir")) {
@@ -120,6 +131,7 @@ private class MyWebViewClient(
 
 class MainActivity : ComponentActivity() {
     private var webView: WebView? = null  // برای دسترسی
+    private var pendingUrl: String? = null
 
     fun getWebView(): WebView? = webView
 
@@ -127,19 +139,60 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-
         setContent {
             RwaghTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     WebViewScreen(
                         url = "https://rwagh.ir/",
                         modifier = Modifier.padding(innerPadding),
-                        onWebViewCreated = { wv -> webView = wv }  // callback برای ست webView
+                        onWebViewCreated = { wv ->
+                            webView = wv
+                            // اگر قبلاً URLی منتظر بود، حالا لودش کن
+                            pendingUrl?.let {
+                                wv.loadUrl(it)
+                                pendingUrl = null
+                            }
+                        }
                     )
                 }
             }
         }
+
+        // اگر اپ از طریق DeepLink باز شده
+        handleDeepLink(intent)
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleDeepLink(intent)
+    }
+
+    private fun handleDeepLink(intent: Intent) {
+        val data = intent.data ?: return
+
+        if (data.scheme == "rwagh" && data.host == "payment-result") {
+            val status = data.getQueryParameter("status") ?: ""
+            val refId = data.getQueryParameter("ref_id") ?: ""
+            val already = data.getQueryParameter("already") ?: ""
+            val invoice = data.getQueryParameter("invoice") ?: ""
+
+            // آدرس صفحه فرانت معادل
+            val finalUrl = buildString {
+                append("https://rwagh.ir/payment-result?")
+                append("status=$status")
+                if (refId.isNotEmpty()) append("&ref_id=$refId")
+                if (already.isNotEmpty()) append("&already=$already")
+                if (invoice.isNotEmpty()) append("&invoice=$invoice")
+            }
+
+            // WebView لود کن
+            getWebView()?.loadUrl(finalUrl)
+                ?: run {
+                    pendingUrl = finalUrl
+                }
+        }
+    }
+
 }
 
 
