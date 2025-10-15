@@ -10,6 +10,7 @@ import android.net.Network
 import android.net.Uri
 import android.os.Bundle
 import android.view.ViewGroup
+import android.webkit.JavascriptInterface
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -262,6 +263,8 @@ fun WebViewScreen(
                         settings.cacheMode = WebSettings.LOAD_DEFAULT
                         webViewClient = MyWebViewClient(ctx)
 
+                        addJavascriptInterface(AppInterface(ctx), "RwaghApp")
+
                         webChromeClient = object : WebChromeClient() {
                             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                                 isLoading = newProgress < 100
@@ -320,5 +323,12 @@ fun WebViewScreen(
         }
         activity?.onBackPressedDispatcher?.addCallback(callback)
         onDispose { callback.remove() }
+    }
+}
+
+class AppInterface(private val context: Context) {
+    @JavascriptInterface
+    fun getClientType(): Int {
+        return 2
     }
 }
