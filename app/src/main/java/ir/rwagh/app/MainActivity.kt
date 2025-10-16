@@ -1,5 +1,4 @@
 package ir.rwagh.app
-
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
@@ -49,13 +48,9 @@ import ir.rwagh.app.ui.theme.RwaghTheme
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
-
-
 enum class ConnectionState {
     Available, Unavailable
 }
-
-
 @SuppressLint("MissingPermission")
 fun Context.observeConnectivityAsFlow(): Flow<ConnectionState> = callbackFlow @RequiresPermission(
     Manifest.permission.ACCESS_NETWORK_STATE
@@ -74,8 +69,6 @@ fun Context.observeConnectivityAsFlow(): Flow<ConnectionState> = callbackFlow @R
         connectivityManager.unregisterNetworkCallback(callback)
     }
 }
-
-
 @Composable
 fun connectivityState(): State<ConnectionState> {
     val context = LocalContext.current
@@ -83,23 +76,18 @@ fun connectivityState(): State<ConnectionState> {
         context.observeConnectivityAsFlow().collect { value = it }
     }
 }
-
 // یک property کمکی برای گرفتن وضعیت اولیه اتصال
 val Context.currentConnectivityState: ConnectionState
     get() {
         val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         return if (connectivityManager.activeNetwork != null) ConnectionState.Available else ConnectionState.Unavailable
     }
-
 // ^^^^^^ پایان بخش جدید ^^^^^^
-
-
 private class MyWebViewClient(
     private val context: Context
 ) : WebViewClient() {
     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
         val url = request?.url?.toString() ?: return false
-
         if (url.startsWith("rwagh://")) {
             try {
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
@@ -109,13 +97,10 @@ private class MyWebViewClient(
             }
             return true
         }
-
         val hostname = Uri.parse(url).host ?: ""
-
         if (hostname == "rwagh.ir" || hostname.endsWith(".rwagh.ir")) {
             return false
         }
-
         try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
             context.startActivity(intent)
@@ -129,17 +114,13 @@ private class MyWebViewClient(
         return true
     }
 }
-
 class MainActivity : ComponentActivity() {
-    private var webView: WebView? = null  // برای دسترسی
+    private var webView: WebView? = null // برای دسترسی
     private var pendingUrl: String? = null
-
     fun getWebView(): WebView? = webView
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
         setContent {
             RwaghTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
@@ -158,25 +139,20 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-
         // اگر اپ از طریق DeepLink باز شده
         handleDeepLink(intent)
     }
-
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleDeepLink(intent)
     }
-
     private fun handleDeepLink(intent: Intent) {
         val data = intent.data ?: return
-
         if (data.scheme == "rwagh" && data.host == "payment-result") {
             val status = data.getQueryParameter("status") ?: ""
             val refId = data.getQueryParameter("ref_id") ?: ""
             val already = data.getQueryParameter("already") ?: ""
             val invoice = data.getQueryParameter("invoice") ?: ""
-
             // آدرس صفحه فرانت معادل
             val finalUrl = buildString {
                 append("https://rwagh.ir/payment-result?")
@@ -185,7 +161,6 @@ class MainActivity : ComponentActivity() {
                 if (already.isNotEmpty()) append("&already=$already")
                 if (invoice.isNotEmpty()) append("&invoice=$invoice")
             }
-
             // WebView لود کن
             getWebView()?.loadUrl(finalUrl)
                 ?: run {
@@ -193,10 +168,7 @@ class MainActivity : ComponentActivity() {
                 }
         }
     }
-
 }
-
-
 @Composable
 fun ErrorScreen() { // دکمه تلاش مجدد دیگر لازم نیست
     Box(modifier = Modifier
@@ -210,7 +182,6 @@ fun ErrorScreen() { // دکمه تلاش مجدد دیگر لازم نیست
         }
     }
 }
-
 /**
  * کامپوننت اصلی که WebView و تمام منطق‌های مربوط به آن را مدیریت می‌کند.
  */
@@ -226,7 +197,6 @@ fun WebViewScreen(
     val isOnline = connection == ConnectionState.Available
     val context = LocalContext.current
     var localWebView by remember { mutableStateOf<WebView?>(null) }
-
     // ---- برای File Chooser ----
     val activity = context as? ComponentActivity
     var fileChooserCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
@@ -242,9 +212,10 @@ fun WebViewScreen(
         fileChooserCallback?.onReceiveValue(uris)
         fileChooserCallback = null
     }
-
     // ----------------------------
-
+    // ---- برای Double Back to Exit ----
+    var lastBackPressedTime by remember { mutableStateOf(0L) }
+    // ----------------------------
     Box(modifier = modifier.fillMaxSize()) {
         if (isOnline) {
             AndroidView(
@@ -261,15 +232,20 @@ fun WebViewScreen(
                         settings.allowContentAccess = true
                         settings.mediaPlaybackRequiresUserGesture = false
                         settings.cacheMode = WebSettings.LOAD_DEFAULT
+                        settings.loadWithOverviewMode = true
+                        settings.useWideViewPort = true
+                        settings.setSupportZoom(true)
+                        settings.builtInZoomControls = true
+                        settings.displayZoomControls = false
+                        settings.databaseEnabled = true
+                        settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                        settings.setRenderPriority(WebSettings.RenderPriority.HIGH)
                         webViewClient = MyWebViewClient(ctx)
-
                         addJavascriptInterface(AppInterface(ctx), "RwaghApp")
-
                         webChromeClient = object : WebChromeClient() {
                             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                                 isLoading = newProgress < 100
                             }
-
                             override fun onShowFileChooser(
                                 webView: WebView?,
                                 filePathCallback: ValueCallback<Array<Uri>>?,
@@ -277,7 +253,6 @@ fun WebViewScreen(
                             ): Boolean {
                                 fileChooserCallback?.onReceiveValue(null)
                                 fileChooserCallback = filePathCallback
-
                                 val intent: Intent = fileChooserParams?.createIntent()!!
                                 try {
                                     filePickerLauncher.launch(intent)
@@ -293,14 +268,12 @@ fun WebViewScreen(
                                 return true
                             }
                         }
-
                         loadUrl(url)
                         onWebViewCreated(this)
                         localWebView = this
                     }
                 }
             )
-
             if (isLoading) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             }
@@ -308,7 +281,6 @@ fun WebViewScreen(
             ErrorScreen()
         }
     }
-
     // ---- دکمه بازگشت ----
     DisposableEffect(activity, localWebView) {
         val callback = object : OnBackPressedCallback(true) {
@@ -316,8 +288,13 @@ fun WebViewScreen(
                 if (localWebView?.canGoBack() == true) {
                     localWebView?.goBack()
                 } else {
-                    isEnabled = false
-                    activity?.onBackPressedDispatcher?.onBackPressed()
+                    val currentTime = System.currentTimeMillis()
+                    if (currentTime - lastBackPressedTime > 2000) {
+                        Toast.makeText(context, "برای خروج دوباره فشار دهید", Toast.LENGTH_SHORT).show()
+                        lastBackPressedTime = currentTime
+                    } else {
+                        activity?.finish()
+                    }
                 }
             }
         }
@@ -325,7 +302,6 @@ fun WebViewScreen(
         onDispose { callback.remove() }
     }
 }
-
 class AppInterface(private val context: Context) {
     @JavascriptInterface
     fun getClientType(): Int {
